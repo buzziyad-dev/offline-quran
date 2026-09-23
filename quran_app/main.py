@@ -79,7 +79,16 @@ class MainWindow(QMainWindow):
         self.audio_service = AudioService(audio_root=assets_dir / "audio")
 
         self._current_theme = self.quran_repo.get_setting("theme", "light") or "light"
+        self._current_font_size = int(self.quran_repo.get_setting("font_size", "22") or "22")
+        self._current_translation_id: int | None = None
+        t = self.quran_repo.get_setting("translation_source_id", None)
+        if t and t != "-1":
+            try:
+                self._current_translation_id = int(t)
+            except ValueError:
+                self._current_translation_id = None
         self.setStyleSheet(stylesheet(self._current_theme))  # type: ignore
+        self._current_surah_num: int = 1
 
         self._build_ui()
         self._load_initial_data()
@@ -139,9 +148,8 @@ class MainWindow(QMainWindow):
         hdr.setStyleSheet("font-size: 15px; font-weight: 700; color: #0E7A5A; padding: 12px; border-bottom: 1px solid #E5E7EB;")
         sb_layout.addWidget(hdr)
 
-        # Surah list (reused HomeScreen but without its own title)
-        self.surah_list = HomeScreen([])
-        # Remove HomeScreen's title duplication — keep search + list
+        # Surah list as sidebar — hide duplicate title (fix #4)
+        self.surah_list = HomeScreen([], show_title=False)
         self.surah_list.surahSelected.connect(self.open_surah)
         sb_layout.addWidget(self.surah_list, stretch=1)
 
@@ -178,7 +186,8 @@ class MainWindow(QMainWindow):
 
         self.settings_screen = SettingsScreen()
         self.settings_screen.themeChanged.connect(self._on_theme)
-        self.settings_screen.fontSizeChanged.connect(lambda v: [w.set_font_size(v) for w in self.reading_view._verse_widgets])
+        self.settings_screen.fontSizeChanged.connect(self._on_font_size)
+        self.settings_screen.translationSourceChanged.connect(self._on_translation_source)
         self.stack.addWidget(self.settings_screen)  # idx 2
 
         self.btn_audio.clicked.connect(lambda: self.stack.setCurrentIndex(1))
@@ -203,6 +212,18 @@ class MainWindow(QMainWindow):
         self.surah_list.update_surahs(surahs)
         sources = self.quran_repo.get_translation_sources()
         self.settings_screen.set_translation_sources(sources)
+        # Restore persisted settings to UI (fix #5)
+        audio_path = self.quran_repo.get_setting("audio_path", None)
+        self.settings_screen.set_values(self._current_font_size, self._current_theme, audio_path)
+        # Apply font size to reading view after creation
+        for w in self.reading_view._verse_widgets:
+            w.set_font_size(self._current_font_size)
+        # Restore translation combo to persisted source
+        if self._current_translation_id is not None:
+            idx = next((i for i, s in enumerate(sources) if s.id == self._current_translation_id), -1)
+            if idx >= 0:
+                # +1 because combo has "None" at 0
+                self.settings_screen.trans_combo.setCurrentIndex(idx + 1)
         reciters = self.audio_repo.get_reciters()
         self.audio_screen.set_data(reciters, surahs, audio_root=Path(__file__).parent / "assets" / "audio")
         # Default to Al-Fatiha (or last position)
@@ -213,13 +234,17 @@ class MainWindow(QMainWindow):
         surah = self.quran_repo.get_surah(surah_number)
         if not surah:
             return
+        self._current_surah_num = surah_number
         ayahs = self.quran_repo.get_ayahs(surah_number)
         translations: dict[tuple[int, int], str] = {}
-        sources = self.quran_repo.get_translation_sources()
-        if sources:
-            for t in self.quran_repo.get_translations_for_surah(surah_number, sources[0].id):
+        # Use selected translation source if set (fix #7), else none
+        if self._current_translation_id is not None:
+            for t in self.quran_repo.get_translations_for_surah(surah_number, self._current_translation_id):
                 translations[(t.surah_number, t.ayah_number)] = t.text
         self.reading_view.set_surah(surah, ayahs, translations)
+        # Apply persisted font size
+        for w in self.reading_view._verse_widgets:
+            w.set_font_size(self._current_font_size)
         self.stack.setCurrentIndex(0)
         self.quran_repo.set_last_position(surah_number, 1)
 
@@ -237,6 +262,18 @@ class MainWindow(QMainWindow):
         self._current_theme = theme
         self.setStyleSheet(stylesheet(theme))  # type: ignore
         self.quran_repo.set_setting("theme", theme)
+
+    def _on_font_size(self, size: int) -> None:
+        self._current_font_size = size
+        for w in self.reading_view._verse_widgets:
+            w.set_font_size(size)
+        self.quran_repo.set_setting("font_size", str(size))  # fix #6: persist
+
+    def _on_translation_source(self, source_id: int) -> None:
+        self._current_translation_id = None if source_id == -1 else source_id
+        self.quran_repo.set_setting("translation_source_id", str(source_id))
+        # Reload current surah with new translation
+        self.open_surah(self._current_surah_num)
 
     def closeEvent(self, event) -> None:  # type: ignore
         try:

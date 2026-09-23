@@ -27,6 +27,7 @@ from quran_app.data.models import TranslationSource
 class SettingsScreen(QWidget):
     themeChanged = Signal(str)
     fontSizeChanged = Signal(int)
+    translationSourceChanged = Signal(int)  # source id, -1 = None
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -70,6 +71,7 @@ class SettingsScreen(QWidget):
         row.addWidget(QLabel("Translation:"))
         self.trans_combo = QComboBox()
         self.trans_combo.addItem("None", None)
+        self.trans_combo.currentIndexChanged.connect(self._on_trans_changed)
         row.addWidget(self.trans_combo)
         row.addStretch()
         layout.addLayout(row)
@@ -95,6 +97,12 @@ class SettingsScreen(QWidget):
     def _on_font(self, v: int) -> None:
         self.font_label.setText(f"{v}pt")
         self.fontSizeChanged.emit(v)
+
+    def _on_trans_changed(self, idx: int) -> None:
+        data = self.trans_combo.currentData()
+        # None -> -1, else int id
+        sid = -1 if data is None else int(data)
+        self.translationSourceChanged.emit(sid)
 
     def _browse_audio(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select audio folder")

@@ -19,10 +19,11 @@ from quran_app.data.models import Surah
 class HomeScreen(QWidget):
     surahSelected = Signal(int)  # surah_number
 
-    def __init__(self, surahs: list[Surah], parent: Optional[QWidget] = None) -> None:
+    def __init__(self, surahs: list[Surah], parent: Optional[QWidget] = None, show_title: bool = True) -> None:
         super().__init__(parent)
         self._all_surahs = surahs
         self._filtered = list(surahs)
+        self._show_title = show_title
         self._build_ui()
         self._populate(surahs)
 
@@ -31,10 +32,11 @@ class HomeScreen(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        title = QLabel("القرآن الكريم — Offline Quran")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #0E7A5A; padding: 6px;")
-        layout.addWidget(title)
+        self.title_label = QLabel("القرآن الكريم — Offline Quran")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #0E7A5A; padding: 6px;")
+        self.title_label.setVisible(self._show_title)
+        layout.addWidget(self.title_label)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search surah (e.g. البقرة, Baqara, Fatiha) …")
